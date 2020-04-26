@@ -7,26 +7,19 @@ const int INPUT_MODE_4 = 5;
 const int INPUT_PHOTOCELL = A0;
 
 const int OUTPUT_RGB_RED_LED = 6;
-const int OUTPUT_RGB_GREEN_LED = 7;
-const int OUTPUT_RGB_BLUE_LED = 8;
+const int OUTPUT_RGB_GREEN_LED = 9;
+const int OUTPUT_RGB_BLUE_LED = 10;
 const int OUTPUT_LED_PIN = LED_BUILTIN;
 
-const int DELAY_MS = 30;
+const int DELAY_MS = 50;
 const int MAX_COLOUR_VALUE = 255;
 const int FADE_STEP = 5;
-const int MIN_PHOTOCELL_VALUE = 200;
-const int MAX_PHOTOCELL_VALUE = 800;
 
-enum RGB{
-  RED,
-  GREEN,
-  BLUE
-};
+RGBConverter rgbConverter;
+float hue = 0.0f;
+float fade_step = 0.001f;
 
 int currentMode = 0;
-int rgbValues[] = {MAX_COLOUR_VALUE, 0, 0};
-enum RGB fadeUpColour = GREEN;
-enum RGB fadeDownColour = RED;
 
 void setup() {
   // put your setup code here, to run once:
@@ -34,13 +27,13 @@ void setup() {
   pinMode(INPUT_MODE_2, INPUT_PULLUP);
   pinMode(INPUT_MODE_3, INPUT_PULLUP);
   pinMode(INPUT_MODE_4, INPUT_PULLUP);
+  pinMode(INPUT_PHOTOCELL, INPUT);
   
   pinMode(OUTPUT_LED_PIN, OUTPUT);
   pinMode(OUTPUT_RGB_RED_LED, OUTPUT);
   pinMode(OUTPUT_RGB_GREEN_LED, OUTPUT);
   pinMode(OUTPUT_RGB_BLUE_LED, OUTPUT);
 
-  setRGBColour(rgbValues[RED], rgbValues[GREEN], rgbValues[BLUE]);
   Serial.begin(9600);
 }
 
@@ -87,13 +80,9 @@ void loop() {
 
 // Crossfading RGB LED 
 void mode1() {
-  digitalWrite(OUTPUT_LED_PIN, HIGH);
   Serial.println("Mode 1");
   // Crossfade led
-  crossFadeLEDs();
-
-  // Change brightness according to photocell
-  
+  crossFadeLEDs();  
 }
 
 // Respond to sound
@@ -116,50 +105,37 @@ void mode4() {
 }
 
 void setRGBColour(int red, int green, int blue) {
-  Serial.println("setting output");
   analogWrite(OUTPUT_RGB_RED_LED, red);
   analogWrite(OUTPUT_RGB_GREEN_LED, green);
-  analogWrite(OUTPUT_RGB_BLUE_LED, blue);  
+  analogWrite(OUTPUT_RGB_BLUE_LED, blue);   
+}
+
+float getLightness() {
+  // Get the reading from the photocell
+  float photocellValue = (float) analogRead(INPUT_PHOTOCELL);
+  float mappedPhotocellValue = mapFloat(photocellValue, 200.0f, 800.0f, 0.0f, 1.0f);
+  return constrain(mappedPhotocellValue, 0.0f, 1.0f);
 }
 
 void crossFadeLEDs() {
-  Serial.println("In the crossfade");
-  rgbValues[fadeUpColour] += FADE_STEP;
-  rgbValues[fadeDownColour]-= FADE_STEP;
-  
-  Serial.println(fadeUpColour);
-  Serial.println(fadeDownColour);
+  // Some parts of this are from the tutorial on RGB LED outputs
+  byte rgb[3];
+  float lightness = getLightness();
+  rgbConverter.hslToRgb(hue, 1, lightness, rgb);
+  setRGBColour(rgb[0], rgb[1], rgb[2]); 
 
-  // Fade code based partially on https://gist.github.com/jamesotron/766994 and tutorials
-  if (rgbValues[fadeUpColour] > MAX_COLOUR_VALUE) {
-    Serial.println("changing the fadeup");
-    rgbValues[fadeUpColour] = MAX_COLOUR_VALUE;
-    fadeUpColour = (RGB)((int) fadeUpColour + 1);
+  // update hue based on step size
+  hue += fade_step;
 
-    if (fadeUpColour > (int) BLUE) {
-      fadeUpColour = RED;
-    }
+  // hue ranges between 0 - 1, so if > 1, reset to 0
+  if (hue > 1.0){
+    hue = 0.0;
   }
 
-  if (rgbValues[fadeDownColour] < 0) {
-    Serial.println("changing the fade down");
-    rgbValues[fadeDownColour] = 0;
-    fadeDownColour = (RGB)((int) fadeDownColour + 1);
-
-    if (fadeDownColour > (int) BLUE) {
-      fadeDownColour = RED;
-    }
-  }
-
-  // Set the photocell brightness
-  int photocellValue = analogRead(INPUT_PHOTOCELL);
-  int mappedPhotocellValue = map(photocellValue, MIN_PHOTOCELL_VALUE, MAX_PHOTOCELL_VALUE, 0, 255);
-  int constrainedPhotocellValue= constrain(mappedPhotocellValue, 0, 255);
-  int invertedValue = 255 - constrainedPhotocellValue;
-  Serial.print(photocellValue);
-  Serial.print(", ");
-  Serial.println(invertedValue);
-  
-  setRGBColour(rgbValues[RED], rgbValues[GREEN], rgbValues[BLUE]);
   delay(DELAY_MS);
+}
+
+// map() for floats
+float mapFloat(float x, float xMin, float xMax, float yMin, float yMax) {
+  return (x - xMin) * (yMax - yMin) / (xMax - xMin) + yMin;
 }
