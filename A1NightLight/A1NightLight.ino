@@ -1,4 +1,5 @@
 #include "src/RGBConverter/RGBConverter.h"
+#include "src/CapacitiveSensor/CapacitiveSensor.h"
 
 const int INPUT_MODE_1 = 2;
 const int INPUT_MODE_2 = 3;
@@ -6,7 +7,10 @@ const int INPUT_MODE_3 = 4;
 const int INPUT_MODE_4 = 5;
 const int INPUT_PHOTOCELL = A0;
 const int INPUT_MICROPHONE = A1; 
-const int INPUT_ANALOG_1 = 11;
+
+CapacitiveSensor redSensor = CapacitiveSensor(12, 11);
+CapacitiveSensor greenSensor = CapacitiveSensor(12, 8);
+CapacitiveSensor blueSensor = CapacitiveSensor(12, 7);
 
 const int INPUT_FORCE = A2;
 
@@ -44,7 +48,6 @@ void setup() {
   pinMode(INPUT_MODE_4, INPUT_PULLUP);
   pinMode(INPUT_PHOTOCELL, INPUT);
   pinMode(INPUT_MICROPHONE, INPUT);
-  pinMode(INPUT_ANALOG_1, INPUT);
 
   pinMode(INPUT_FORCE, INPUT);
   
@@ -106,27 +109,32 @@ void mode1() {
 
 // Respond to sound
 void mode2() {
-  digitalWrite(OUTPUT_LED_PIN, HIGH);
   Serial.println("Mode 2");
   respondToSound();
 }
 
 // Configuring colour with lofi input
 void mode3() {
-  Serial.println("Mode 3");
+  long redTotal = redSensor.capacitiveSensor(50);
+  if (redTotal > 500) {
+    setRGBColour(255, 0, 0);
+  } 
 
-    // If the capacitive sensor reads above a certain threshold,
-  //  turn on the LED
-  Serial.println(readCapacitivePin(INPUT_ANALOG_1));
-  if (readCapacitivePin(INPUT_ANALOG_1) > touchedCutoff) {
-    Serial.println("In the or");
-    digitalWrite(OUTPUT_GREEN, HIGH);
-  }
-  else {
-    Serial.println("not in there");
-    digitalWrite(OUTPUT_GREEN, LOW);
+  long greenTotal = greenSensor.capacitiveSensor(50);
+  if (greenTotal > 500) {
+    setRGBColour(0, 255, 0);
   }
 
+  long blueTotal = blueSensor.capacitiveSensor(50);
+  if (blueTotal > 500) {
+    setRGBColour(0, 0, 255);
+  }
+
+  if (redTotal <= 500  & greenTotal <=500 & blueTotal <=500) {
+    setRGBColour(0, 0, 0);
+  }
+
+  delay(10);
 }
 
 // Creative feature
@@ -135,15 +143,10 @@ void mode4() {
   float force = constrain(forceMapped, 0.0, 1.0);
   
   if (force > peakForce) {
-    Serial.print("Force: " );
-    Serial.println(force);
-    Serial.println("Greater than peak force!");
     peakForce = force;
   }
   if (force <= forceThreshold) {
     if (peakForce > forceThreshold) {
-      Serial.print("Peak force: " );
-      Serial.println(peakForce);
       peakForce = 0.0;
     }
   }
@@ -158,15 +161,15 @@ void setRGBColour(int red, int green, int blue) {
 
 float getLightness() {
   // Get the reading from the photocell
-  float photocellValue = (float) analogRead(INPUT_PHOTOCELL);
-  float mappedPhotocellValue = mapFloat(photocellValue, 200.0f, 800.0f, 0.0f, 1.0f);
-  return constrain(mappedPhotocellValue, 0.0f, 1.0f);
+  float mappedPhotocellValue = mapFloat((float) analogRead(INPUT_PHOTOCELL), 200.0, 800.0, 0.0, .50);
+  Serial.println(mappedPhotocellValue);
+  return constrain(mappedPhotocellValue, 0.0, 1.0);
 }
 
 void crossFadeLEDs(float lightValue) {
   // Some parts of this are from the tutorial on RGB LED outputs
   byte rgb[3];
-  rgbConverter.hslToRgb(hue, 1, lightValue, rgb);
+  rgbConverter.hslToRgb(hue, 1.0, lightValue, rgb);
   setRGBColour(rgb[0], rgb[1], rgb[2]); 
 
   // update hue based on step size
@@ -196,69 +199,4 @@ void respondToSound() {
 // map() for floats
 float mapFloat(float x, float xMin, float xMax, float yMin, float yMax) {
   return (x - xMin) * (yMax - yMin) / (xMax - xMin) + yMin;
-}
-
-// readCapacitivePin
-//  Input: Arduino pin number
-//  Output: A number, from 0 to 17 expressing
-//          how much capacitance is on the pin
-//  When you touch the pin, or whatever you have
-//  attached to it, the number will get higher
-//  In order for this to work now,
-// The pin should have a resistor pulling
-//  it up to +5v.
-// Taken from: https://sites.google.com/a/mtholyoke.edu/idesign-studio-workshop/labs-tutorials/workshop-5-capacitive-touch
-uint8_t readCapacitivePin(int pinToMeasure){
-  // This is how you declare a variable which
-  //  will hold the PORT, PIN, and DDR registers
-  //  on an AVR
-  volatile uint8_t* port;
-  volatile uint8_t* ddr;
-  volatile uint8_t* pin;
-  // Here we translate the input pin number from
-  //  Arduino pin number to the AVR PORT, PIN, DDR,
-  //  and which bit of those registers we care about.
-  byte bitmask;
-  if ((pinToMeasure >= 0) && (pinToMeasure <= 7)){
-    port = &PORTD;
-    ddr = &DDRD;
-    bitmask = 1 << pinToMeasure;
-    pin = &PIND;
-  }
-  if ((pinToMeasure > 7) && (pinToMeasure <= 13)){
-    port = &PORTB;
-    ddr = &DDRB;
-    bitmask = 1 << (pinToMeasure - 8);
-    pin = &PINB;
-  }
-  if ((pinToMeasure > 13) && (pinToMeasure <= 19)){
-    port = &PORTC;
-    ddr = &DDRC;
-    bitmask = 1 << (pinToMeasure - 13);
-    pin = &PINC;
-  }
-  // Discharge the pin first by setting it low and output
-  *port &= ~(bitmask);
-  *ddr  |= bitmask;
-  delay(1);
-  // Make the pin an input WITHOUT the internal pull-up on
-  *ddr &= ~(bitmask);
-  // Now see how long the pin to get pulled up
-  int cycles = 16000;
-  for(int i = 0; i < cycles; i++){
-    if (*pin & bitmask){
-      cycles = i;
-      break;
-    }
-  }
-  // Discharge the pin again by setting it low and output
-  //  It's important to leave the pins low if you want to 
-  //  be able to touch more than 1 sensor at a time - if
-  //  the sensor is left pulled high, when you touch
-  //  two sensors, your body will transfer the charge between
-  //  sensors.
-  *port &= ~(bitmask);
-  *ddr  |= bitmask;
-  
-  return cycles;
 }
